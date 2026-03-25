@@ -1,0 +1,1139 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Transformer 处理中文诗句可视化</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+            min-height: 100vh;
+            color: #fff;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        h1 {
+            text-align: center;
+            margin-bottom: 10px;
+            font-size: 2em;
+            background: linear-gradient(90deg, #00d2ff, #3a7bd5);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .subtitle {
+            text-align: center;
+            color: #888;
+            margin-bottom: 30px;
+        }
+
+        .poem-display {
+            text-align: center;
+            font-size: 1.8em;
+            padding: 30px;
+            background: rgba(255,255,255,0.05);
+            border-radius: 15px;
+            margin-bottom: 30px;
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+
+        .poem-char {
+            display: inline-block;
+            opacity: 0.3;
+            transition: all 0.3s ease;
+            margin: 0 2px;
+        }
+
+        .poem-char.active {
+            opacity: 1;
+            transform: scale(1.2);
+            color: #00d2ff;
+        }
+
+        .poem-char.tokenized {
+            opacity: 1;
+            background: rgba(0, 210, 255, 0.2);
+            border-radius: 5px;
+            padding: 5px;
+            margin: 2px;
+        }
+
+        .stage-indicator {
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .stage {
+            padding: 15px 30px;
+            background: rgba(255,255,255,0.05);
+            border-radius: 10px;
+            border: 2px solid rgba(255,255,255,0.1);
+            transition: all 0.3s ease;
+        }
+
+        .stage.active {
+            background: rgba(0, 210, 255, 0.2);
+            border-color: #00d2ff;
+            transform: scale(1.05);
+        }
+
+        .stage-number {
+            font-size: 1.5em;
+            font-weight: bold;
+            color: #00d2ff;
+        }
+
+        .stage-name {
+            font-size: 0.9em;
+            color: #aaa;
+        }
+
+        .visualization-area {
+            background: rgba(0,0,0,0.3);
+            border-radius: 20px;
+            padding: 30px;
+            margin-bottom: 30px;
+            min-height: 400px;
+        }
+
+        #tokenization-viz {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 10px;
+            min-height: 200px;
+        }
+
+        .token-box {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 15px 20px;
+            border-radius: 10px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-width: 60px;
+            opacity: 0;
+            transform: translateY(20px);
+            transition: all 0.3s ease;
+        }
+
+        .token-box.visible {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        .token-text {
+            font-size: 1.2em;
+            font-weight: bold;
+        }
+
+        .token-id {
+            font-size: 0.8em;
+            color: rgba(255,255,255,0.7);
+            margin-top: 5px;
+        }
+
+        #embedding-viz {
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+            gap: 30px;
+            flex-wrap: wrap;
+            min-height: 300px;
+        }
+
+        .embedding-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            opacity: 0;
+            transform: translateY(20px);
+            transition: all 0.3s ease;
+        }
+
+        .embedding-container.visible {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        .embedding-token {
+            font-size: 1.5em;
+            margin-bottom: 10px;
+            padding: 10px 15px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 8px;
+        }
+
+        .embedding-vector {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+
+        .vector-cell {
+            width: 40px;
+            height: 8px;
+            border-radius: 2px;
+            transition: all 0.1s ease;
+        }
+
+        #attention-viz {
+            min-height: 400px;
+        }
+
+        .explanation {
+            background: rgba(255,255,255,0.05);
+            border-radius: 15px;
+            padding: 20px;
+            margin-bottom: 30px;
+            border-left: 4px solid #00d2ff;
+        }
+
+        .explanation h3 {
+            color: #00d2ff;
+            margin-bottom: 10px;
+        }
+
+        .explanation p {
+            color: #aaa;
+            line-height: 1.6;
+        }
+
+        .controls {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 15px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+
+        .btn {
+            padding: 12px 30px;
+            font-size: 1em;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-weight: bold;
+            min-width: 100px;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #00d2ff 0%, #3a7bd5 100%);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 20px rgba(0, 210, 255, 0.4);
+        }
+
+        .btn-primary:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .btn-secondary {
+            background: rgba(255,255,255,0.1);
+            color: white;
+            border: 1px solid rgba(255,255,255,0.2);
+        }
+
+        .btn-secondary:hover {
+            background: rgba(255,255,255,0.2);
+        }
+
+        .btn-pause {
+            background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+            color: white;
+        }
+
+        .btn-pause:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 20px rgba(245, 158, 11, 0.4);
+        }
+
+        .btn-pause.playing {
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+        }
+
+        .btn-pause.playing:hover {
+            box-shadow: 0 5px 20px rgba(16, 185, 129, 0.4);
+        }
+
+        /* 时间轴样式 */
+        .timeline-container {
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 15px;
+            padding: 20px 30px;
+            margin-bottom: 30px;
+        }
+
+        .timeline-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+
+        .timeline-title {
+            font-size: 0.9em;
+            color: #888;
+        }
+
+        .timeline-time {
+            font-size: 1.1em;
+            font-weight: bold;
+            color: #00d2ff;
+            font-family: monospace;
+        }
+
+        .timeline-slider-container {
+            position: relative;
+            padding: 10px 0;
+        }
+
+        .timeline-markers {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 5px;
+            padding: 0 5px;
+        }
+
+        .timeline-marker {
+            font-size: 0.75em;
+            color: #666;
+        }
+
+        .timeline-marker.active {
+            color: #00d2ff;
+            font-weight: bold;
+        }
+
+        #timeline-slider {
+            width: 100%;
+            height: 8px;
+            -webkit-appearance: none;
+            appearance: none;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 4px;
+            outline: none;
+            cursor: pointer;
+        }
+
+        #timeline-slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 20px;
+            height: 20px;
+            background: linear-gradient(135deg, #00d2ff 0%, #3a7bd5 100%);
+            border-radius: 50%;
+            cursor: pointer;
+            box-shadow: 0 2px 10px rgba(0, 210, 255, 0.5);
+            transition: transform 0.2s ease;
+        }
+
+        #timeline-slider::-webkit-slider-thumb:hover {
+            transform: scale(1.2);
+        }
+
+        #timeline-slider::-moz-range-thumb {
+            width: 20px;
+            height: 20px;
+            background: linear-gradient(135deg, #00d2ff 0%, #3a7bd5 100%);
+            border-radius: 50%;
+            cursor: pointer;
+            border: none;
+            box-shadow: 0 2px 10px rgba(0, 210, 255, 0.5);
+        }
+
+        #timeline-slider:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        #timeline-slider:disabled::-webkit-slider-thumb {
+            cursor: not-allowed;
+        }
+
+        .hidden {
+            display: none !important;
+        }
+
+        .legend {
+            display: flex;
+            justify-content: center;
+            gap: 30px;
+            margin-top: 20px;
+            font-size: 0.9em;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .legend-color {
+            width: 20px;
+            height: 20px;
+            border-radius: 4px;
+        }
+
+        /* 阶段进度条 */
+        .stage-progress {
+            position: absolute;
+            top: 0;
+            left: 0;
+            height: 100%;
+            pointer-events: none;
+        }
+
+        .stage-segment {
+            position: absolute;
+            top: 0;
+            height: 100%;
+            opacity: 0.3;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Transformer 处理中文诗句可视化</h1>
+        <p class="subtitle">从 Tokenization 到 Self-Attention 的完整流程</p>
+
+        <div class="poem-display">
+            <span id="poem-container"></span>
+        </div>
+
+        <div class="stage-indicator">
+            <div class="stage" id="stage-1">
+                <div class="stage-number">1</div>
+                <div class="stage-name">Tokenization</div>
+            </div>
+            <div class="stage" id="stage-2">
+                <div class="stage-number">2</div>
+                <div class="stage-name">Embedding</div>
+            </div>
+            <div class="stage" id="stage-3">
+                <div class="stage-number">3</div>
+                <div class="stage-name">Self-Attention</div>
+            </div>
+        </div>
+
+        <div class="explanation" id="explanation">
+            <h3>点击"开始演示"按钮</h3>
+            <p>本演示将展示大模型如何处理中文诗句"山重水复疑无路，柳暗花明又一村"的完整流程。</p>
+        </div>
+
+        <div class="visualization-area">
+            <div id="tokenization-viz" class="hidden"></div>
+            <div id="embedding-viz" class="hidden"></div>
+            <div id="attention-viz" class="hidden">
+                <svg id="attention-svg" width="600" height="400"></svg>
+            </div>
+        </div>
+
+        <div class="timeline-container">
+            <div class="timeline-header">
+                <span class="timeline-title">动画进度</span>
+                <span class="timeline-time" id="time-display">00:00 / 00:12</span>
+            </div>
+            <div class="timeline-markers">
+                <span class="timeline-marker" id="marker-1">Tokenization</span>
+                <span class="timeline-marker" id="marker-2">Embedding</span>
+                <span class="timeline-marker" id="marker-3">Attention</span>
+                <span class="timeline-marker">完成</span>
+            </div>
+            <div class="timeline-slider-container">
+                <input type="range" id="timeline-slider" min="0" max="12000" value="0" step="50" disabled>
+            </div>
+        </div>
+
+        <div class="controls">
+            <button class="btn btn-primary" id="start-btn">开始演示</button>
+            <button class="btn btn-pause playing" id="pause-btn" disabled>暂停</button>
+            <button class="btn btn-secondary" id="reset-btn">重置</button>
+        </div>
+
+        <div class="legend hidden" id="legend">
+            <div class="legend-item">
+                <div class="legend-color" style="background: #f3f4f6;"></div>
+                <span>低关注度</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color" style="background: #fef08a;"></div>
+                <span>中等关注度</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color" style="background: #86efac;"></div>
+                <span>高关注度</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color" style="background: #3b82f6;"></div>
+                <span>最高关注度</span>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ========================================
+        // 数据定义
+        // ========================================
+        const poem = "山重水复疑无路，柳暗花明又一村";
+
+        const tokens = [
+            { text: "山重", id: 20 },
+            { text: "水复", id: 21 },
+            { text: "疑", id: 8 },
+            { text: "无", id: 9 },
+            { text: "路", id: 10 },
+            { text: "，", id: 18 },
+            { text: "柳暗", id: 22 },
+            { text: "花明", id: 23 },
+            { text: "又一", id: 24 },
+            { text: "村", id: 17 }
+        ];
+
+        const TOTAL_DURATION = 12000; // 12秒
+        const STAGE_1_END = 3500;     // Tokenization 结束
+        const STAGE_2_END = 6000;     // Embedding 结束
+
+        // 预生成注意力权重
+        const attentionWeights = generateAttentionWeights();
+
+        function generateAttentionWeights() {
+            const n = tokens.length;
+            const weights = [];
+            for (let i = 0; i < n; i++) {
+                const row = [];
+                for (let j = 0; j < n; j++) {
+                    let base = Math.random() * 0.3;
+                    if (Math.abs(i - j) <= 1) base += 0.2;
+                    if ((i < 6 && j < 6) || (i >= 6 && j >= 6)) base += 0.15;
+                    if (j === 5 && i < 5) base += 0.1;
+                    if (i === 5 && j > 5) base += 0.1;
+                    if (i === j) base += 0.1;
+                    row.push(Math.min(1, base));
+                }
+                const sum = row.reduce((a, b) => a + b, 0);
+                for (let j = 0; j < n; j++) {
+                    row[j] = row[j] / sum;
+                }
+                weights.push(row);
+            }
+            return weights;
+        }
+
+        // ========================================
+        // DOM 元素
+        // ========================================
+        const poemContainer = document.getElementById('poem-container');
+        const tokenizationViz = document.getElementById('tokenization-viz');
+        const embeddingViz = document.getElementById('embedding-viz');
+        const attentionViz = document.getElementById('attention-viz');
+        const explanation = document.getElementById('explanation');
+        const startBtn = document.getElementById('start-btn');
+        const pauseBtn = document.getElementById('pause-btn');
+        const resetBtn = document.getElementById('reset-btn');
+        const legend = document.getElementById('legend');
+        const timelineSlider = document.getElementById('timeline-slider');
+        const timeDisplay = document.getElementById('time-display');
+
+        // ========================================
+        // 动画状态
+        // ========================================
+        let currentTime = 0;
+        let isPlaying = false;
+        let lastFrameTime = 0;
+        let animationFrameId = null;
+        let executedEvents = new Set(); // 已执行的事件索引
+
+        // ========================================
+        // 时间轴事件定义
+        // ========================================
+        const timeline = [];
+
+        function buildTimeline() {
+            timeline.length = 0;
+            let t = 0;
+
+            // ===== 阶段 1: Tokenization (0 - 3500ms) =====
+            // 显示 stage 1
+            timeline.push({
+                time: 0,
+                stage: 1,
+                action: () => {
+                    activateStage(1);
+                    updateExplanation('Tokenization (分词)', 'BPE 算法将文本切分为 Token。高频词组会被合并成单个 token（如"柳暗"、"花明"），低频词会被拆成单字。');
+                    tokenizationViz.classList.remove('hidden');
+                    tokenizationViz.textContent = '';
+                },
+                reverse: () => {
+                    activateStage(0);
+                    tokenizationViz.classList.add('hidden');
+                }
+            });
+
+            // 每个 token 的显示
+            for (let i = 0; i < tokens.length; i++) {
+                const token = tokens[i];
+                const tokenIndex = i;
+
+                timeline.push({
+                    time: t,
+                    stage: 1,
+                    action: () => {
+                        // 高亮诗句中的字符
+                        const poemChars = document.querySelectorAll('.poem-char');
+                        let charIndex = 0;
+                        for (let j = 0; j < tokenIndex; j++) {
+                            charIndex += tokens[j].text.length;
+                        }
+                        for (let j = 0; j < token.text.length; j++) {
+                            if (poemChars[charIndex + j]) {
+                                poemChars[charIndex + j].classList.add('tokenized');
+                            }
+                        }
+
+                        // 创建 token box
+                        const box = document.createElement('div');
+                        box.className = 'token-box';
+                        box.id = 'token-box-' + tokenIndex;
+
+                        const textSpan = document.createElement('span');
+                        textSpan.className = 'token-text';
+                        textSpan.textContent = token.text;
+
+                        const idSpan = document.createElement('span');
+                        idSpan.className = 'token-id';
+                        idSpan.textContent = 'ID: ' + token.id;
+
+                        box.appendChild(textSpan);
+                        box.appendChild(idSpan);
+                        tokenizationViz.appendChild(box);
+
+                        // 触发动画
+                        requestAnimationFrame(() => box.classList.add('visible'));
+                    },
+                    reverse: () => {
+                        // 取消高亮
+                        const poemChars = document.querySelectorAll('.poem-char');
+                        let charIndex = 0;
+                        for (let j = 0; j < tokenIndex; j++) {
+                            charIndex += tokens[j].text.length;
+                        }
+                        for (let j = 0; j < tokens[tokens.length - 1 - tokenIndex].text.length; j++) {
+                            // 从后往前取消
+                        }
+                        // 简化：重新初始化所有字符
+                        for (let c of poemChars) {
+                            c.classList.remove('tokenized');
+                        }
+                        // 重新应用之前的 token
+                        for (let j = 0; j < tokenIndex; j++) {
+                            let ci = 0;
+                            for (let k = 0; k < j; k++) ci += tokens[k].text.length;
+                            for (let k = 0; k < tokens[j].text.length; k++) {
+                                if (poemChars[ci + k]) poemChars[ci + k].classList.add('tokenized');
+                            }
+                        }
+
+                        // 移除 token box
+                        const box = document.getElementById('token-box-' + tokenIndex);
+                        if (box) box.remove();
+                    }
+                });
+
+                t += 350;
+            }
+
+            // ===== 阶段 2: Embedding (3500 - 6000ms) =====
+            t = STAGE_1_END;
+
+            timeline.push({
+                time: t,
+                stage: 2,
+                action: () => {
+                    activateStage(2);
+                    updateExplanation('Embedding (嵌入)', '每个 Token ID 被映射为一个高维向量（本例中是 64 维）。这些向量包含了 token 的语义信息，加上位置编码后还包含顺序信息。');
+                    tokenizationViz.classList.add('hidden');
+                    embeddingViz.classList.remove('hidden');
+                    embeddingViz.textContent = '';
+                },
+                reverse: () => {
+                    activateStage(1);
+                    embeddingViz.classList.add('hidden');
+                    tokenizationViz.classList.remove('hidden');
+                }
+            });
+
+            t += 200;
+
+            // 每个 embedding 的显示
+            for (let i = 0; i < Math.min(6, tokens.length); i++) {
+                const token = tokens[i];
+                const embIndex = i;
+
+                timeline.push({
+                    time: t,
+                    stage: 2,
+                    action: () => {
+                        const container = document.createElement('div');
+                        container.className = 'embedding-container';
+                        container.id = 'embedding-' + embIndex;
+
+                        const tokenDiv = document.createElement('div');
+                        tokenDiv.className = 'embedding-token';
+                        tokenDiv.textContent = token.text;
+
+                        const vectorDiv = document.createElement('div');
+                        vectorDiv.className = 'embedding-vector';
+
+                        for (let j = 0; j < 16; j++) {
+                            const cell = document.createElement('div');
+                            cell.className = 'vector-cell';
+
+                            const value = Math.random();
+                            const hue = value * 240;
+                            const saturation = 70 + value * 30;
+                            const lightness = 40 + value * 20;
+                            cell.style.background = 'hsl(' + hue + ', ' + saturation + '%, ' + lightness + '%)';
+
+                            vectorDiv.appendChild(cell);
+                        }
+
+                        container.appendChild(tokenDiv);
+                        container.appendChild(vectorDiv);
+                        embeddingViz.appendChild(container);
+
+                        requestAnimationFrame(() => container.classList.add('visible'));
+                    },
+                    reverse: () => {
+                        const container = document.getElementById('embedding-' + embIndex);
+                        if (container) container.remove();
+                    }
+                });
+
+                t += 300;
+            }
+
+            // ===== 阶段 3: Self-Attention (6000 - 12000ms) =====
+            t = STAGE_2_END;
+
+            timeline.push({
+                time: t,
+                stage: 3,
+                action: () => {
+                    activateStage(3);
+                    updateExplanation('Self-Attention (自注意力)', '每个 token 的向量与所有其他 token 交互，计算注意力权重。权重越高，表示两个 token 之间语义关联越强。');
+                    embeddingViz.classList.add('hidden');
+                    attentionViz.classList.remove('hidden');
+                    legend.classList.remove('hidden');
+                    initAttentionMatrix();
+                },
+                reverse: () => {
+                    activateStage(2);
+                    attentionViz.classList.add('hidden');
+                    legend.classList.add('hidden');
+                    embeddingViz.classList.remove('hidden');
+                    d3.select('#attention-svg').selectAll('*').remove();
+                }
+            });
+
+            t += 300;
+
+            // 注意力矩阵单元格
+            const n = tokens.length;
+            for (let i = 0; i < n; i++) {
+                for (let j = 0; j < n; j++) {
+                    const row = i;
+                    const col = j;
+
+                    timeline.push({
+                        time: t,
+                        stage: 3,
+                        action: () => showAttentionCell(row, col),
+                        reverse: () => hideAttentionCell(row, col)
+                    });
+
+                    t += 30;
+                }
+            }
+
+            // 连接动画
+            const connections = [
+                { from: 0, to: 1 },
+                { from: 6, to: 7 },
+                { from: 3, to: 4 },
+            ];
+
+            for (const conn of connections) {
+                timeline.push({
+                    time: t,
+                    stage: 3,
+                    action: () => animateConnection(conn.from, conn.to),
+                    reverse: () => {} // 连接动画不需要 reverse
+                });
+                t += 600;
+            }
+
+            // 排序时间轴
+            timeline.sort((a, b) => a.time - b.time);
+        }
+
+        // ========================================
+        // 注意力矩阵函数
+        // ========================================
+        const margin = { top: 50, right: 50, bottom: 50, left: 50 };
+        const cellSize = 35;
+
+        function initAttentionMatrix() {
+            const svg = d3.select('#attention-svg');
+            svg.selectAll('*').remove();
+
+            const n = tokens.length;
+
+            // 绘制列标签
+            svg.selectAll('.col-label')
+                .data(tokens)
+                .enter()
+                .append('text')
+                .attr('class', 'col-label')
+                .attr('x', function(d, i) { return margin.left + i * cellSize + cellSize / 2; })
+                .attr('y', margin.top - 10)
+                .attr('text-anchor', 'middle')
+                .attr('fill', '#fff')
+                .attr('font-size', '14px')
+                .text(function(d) { return d.text; })
+                .attr('opacity', 1);
+
+            // 绘制行标签
+            svg.selectAll('.row-label')
+                .data(tokens)
+                .enter()
+                .append('text')
+                .attr('class', 'row-label')
+                .attr('x', margin.left - 10)
+                .attr('y', function(d, i) { return margin.top + i * cellSize + cellSize / 2 + 5; })
+                .attr('text-anchor', 'end')
+                .attr('fill', '#fff')
+                .attr('font-size', '14px')
+                .text(function(d) { return d.text; })
+                .attr('opacity', 1);
+        }
+
+        function showAttentionCell(row, col) {
+            const svg = d3.select('#attention-svg');
+            const weight = attentionWeights[row][col];
+            const color = getAttentionColor(weight);
+
+            svg.append('rect')
+                .attr('class', 'attention-cell cell-' + row + '-' + col)
+                .attr('x', margin.left + col * cellSize)
+                .attr('y', margin.top + row * cellSize)
+                .attr('width', cellSize - 2)
+                .attr('height', cellSize - 2)
+                .attr('rx', 4)
+                .attr('fill', color)
+                .attr('opacity', 1);
+
+            if (weight > 0.08) {
+                svg.append('text')
+                    .attr('class', 'attention-text text-' + row + '-' + col)
+                    .attr('x', margin.left + col * cellSize + cellSize / 2)
+                    .attr('y', margin.top + row * cellSize + cellSize / 2 + 4)
+                    .attr('text-anchor', 'middle')
+                    .attr('fill', weight > 0.15 ? '#fff' : '#333')
+                    .attr('font-size', '10px')
+                    .text((weight * 100).toFixed(0))
+                    .attr('opacity', 1);
+            }
+        }
+
+        function hideAttentionCell(row, col) {
+            d3.select('#attention-svg')
+                .selectAll('.cell-' + row + '-' + col + ', .text-' + row + '-' + col)
+                .remove();
+        }
+
+        function animateConnection(from, to) {
+            const svg = d3.select('#attention-svg');
+
+            svg.append('circle')
+                .attr('class', 'connection-ring')
+                .attr('cx', margin.left + to * cellSize + cellSize / 2)
+                .attr('cy', margin.top + from * cellSize + cellSize / 2)
+                .attr('r', 0)
+                .attr('fill', 'none')
+                .attr('stroke', '#00d2ff')
+                .attr('stroke-width', 3)
+                .transition()
+                .duration(500)
+                .attr('r', cellSize / 2)
+                .transition()
+                .duration(300)
+                .attr('opacity', 0)
+                .remove();
+        }
+
+        function getAttentionColor(weight) {
+            if (weight < 0.05) return '#f3f4f6';
+            if (weight < 0.08) return '#fef08a';
+            if (weight < 0.12) return '#86efac';
+            if (weight < 0.18) return '#60a5fa';
+            return '#3b82f6';
+        }
+
+        // ========================================
+        // 辅助函数
+        // ========================================
+        function activateStage(num) {
+            document.querySelectorAll('.stage').forEach(function(s, i) {
+                if (i + 1 === num) {
+                    s.classList.add('active');
+                } else {
+                    s.classList.remove('active');
+                }
+            });
+
+            document.querySelectorAll('.timeline-marker').forEach(function(m, i) {
+                if (i + 1 === num) {
+                    m.classList.add('active');
+                } else {
+                    m.classList.remove('active');
+                }
+            });
+        }
+
+        function updateExplanation(title, content) {
+            const h3 = explanation.querySelector('h3');
+            const p = explanation.querySelector('p');
+            if (h3) h3.textContent = title;
+            if (p) p.textContent = content;
+        }
+
+        function formatTime(ms) {
+            const seconds = Math.floor(ms / 1000);
+            const minutes = Math.floor(seconds / 60);
+            const secs = seconds % 60;
+            return String(minutes).padStart(2, '0') + ':' + String(secs).padStart(2, '0');
+        }
+
+        function updateTimeDisplay() {
+            timeDisplay.textContent = formatTime(currentTime) + ' / ' + formatTime(TOTAL_DURATION);
+            timelineSlider.value = currentTime;
+        }
+
+        // ========================================
+        // 动画控制
+        // ========================================
+        function initPoem() {
+            poemContainer.textContent = '';
+            for (let char of poem) {
+                const span = document.createElement('span');
+                span.className = 'poem-char';
+                span.textContent = char;
+                poemContainer.appendChild(span);
+            }
+        }
+
+        function reset() {
+            isPlaying = false;
+            currentTime = 0;
+            executedEvents.clear();
+            lastFrameTime = 0;
+
+            if (animationFrameId) {
+                cancelAnimationFrame(animationFrameId);
+                animationFrameId = null;
+            }
+
+            tokenizationViz.classList.add('hidden');
+            embeddingViz.classList.add('hidden');
+            attentionViz.classList.add('hidden');
+            legend.classList.add('hidden');
+
+            activateStage(0);
+            initPoem();
+            updateExplanation('点击"开始演示"按钮', '本演示将展示大模型如何处理中文诗句的完整流程。');
+
+            startBtn.disabled = false;
+            startBtn.textContent = '开始演示';
+            pauseBtn.disabled = true;
+            pauseBtn.textContent = '暂停';
+            pauseBtn.classList.add('playing');
+            timelineSlider.disabled = true;
+            timelineSlider.value = 0;
+
+            updateTimeDisplay();
+
+            // 清空可视化区域
+            tokenizationViz.textContent = '';
+            embeddingViz.textContent = '';
+            d3.select('#attention-svg').selectAll('*').remove();
+        }
+
+        function start() {
+            if (isPlaying) return;
+
+            if (currentTime >= TOTAL_DURATION) {
+                reset();
+            }
+
+            isPlaying = true;
+            lastFrameTime = performance.now();
+
+            startBtn.disabled = true;
+            startBtn.textContent = '演示中...';
+            pauseBtn.disabled = false;
+            pauseBtn.textContent = '暂停';
+            pauseBtn.classList.remove('playing');
+            timelineSlider.disabled = false;
+
+            buildTimeline();
+            animationLoop();
+        }
+
+        function pause() {
+            if (!isPlaying) return;
+
+            isPlaying = false;
+            if (animationFrameId) {
+                cancelAnimationFrame(animationFrameId);
+                animationFrameId = null;
+            }
+
+            pauseBtn.textContent = '继续';
+            pauseBtn.classList.add('playing');
+        }
+
+        function resume() {
+            if (isPlaying) return;
+
+            isPlaying = true;
+            lastFrameTime = performance.now();
+            pauseBtn.textContent = '暂停';
+            pauseBtn.classList.remove('playing');
+
+            animationLoop();
+        }
+
+        function togglePause() {
+            if (isPlaying) {
+                pause();
+            } else {
+                resume();
+            }
+        }
+
+        function seekTo(time) {
+            const wasPlaying = isPlaying;
+
+            if (isPlaying) {
+                isPlaying = false;
+                if (animationFrameId) {
+                    cancelAnimationFrame(animationFrameId);
+                    animationFrameId = null;
+                }
+            }
+
+            const targetTime = Math.max(0, Math.min(TOTAL_DURATION, time));
+            const goingForward = targetTime > currentTime;
+
+            currentTime = targetTime;
+            updateTimeDisplay();
+
+            // 找出需要执行或撤销的事件
+            for (let i = 0; i < timeline.length; i++) {
+                const event = timeline[i];
+                const shouldHaveExecuted = event.time <= currentTime;
+                const hasExecuted = executedEvents.has(i);
+
+                if (shouldHaveExecuted && !hasExecuted) {
+                    event.action();
+                    executedEvents.add(i);
+                } else if (!shouldHaveExecuted && hasExecuted) {
+                    event.reverse();
+                    executedEvents.delete(i);
+                }
+            }
+
+            if (wasPlaying) {
+                isPlaying = true;
+                lastFrameTime = performance.now();
+                animationLoop();
+            }
+        }
+
+        function animationLoop() {
+            if (!isPlaying) return;
+
+            const now = performance.now();
+            const delta = now - lastFrameTime;
+            lastFrameTime = now;
+
+            currentTime += delta;
+
+            if (currentTime >= TOTAL_DURATION) {
+                currentTime = TOTAL_DURATION;
+                isPlaying = false;
+                startBtn.disabled = false;
+                startBtn.textContent = '重新演示';
+                pauseBtn.disabled = true;
+                pauseBtn.textContent = '暂停';
+                pauseBtn.classList.add('playing');
+            }
+
+            updateTimeDisplay();
+
+            // 执行到期的动画事件
+            for (let i = 0; i < timeline.length; i++) {
+                const event = timeline[i];
+                if (event.time <= currentTime && !executedEvents.has(i)) {
+                    event.action();
+                    executedEvents.add(i);
+                }
+            }
+
+            if (isPlaying) {
+                animationFrameId = requestAnimationFrame(animationLoop);
+            }
+        }
+
+        // ========================================
+        // 事件绑定
+        // ========================================
+        startBtn.addEventListener('click', start);
+        pauseBtn.addEventListener('click', togglePause);
+        resetBtn.addEventListener('click', reset);
+
+        timelineSlider.addEventListener('input', function() {
+            seekTo(parseInt(this.value));
+        });
+
+        // 初始化
+        initPoem();
+        buildTimeline();
+        updateTimeDisplay();
+    </script>
+</body>
+</html>
